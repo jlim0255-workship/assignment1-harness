@@ -40,10 +40,61 @@ from cs329z_hw1.types import (
     ToolSpec,
 )
 
+import json
+import re
+
 # ======================================================================
 # Part 1: LLM pipelines
 # ======================================================================
 
+
+SYSTEM_PROMPT = """
+You are a professional assistant that classifies emails for their recipient.\
+
+Please decide the priority of the email based on the criteria below:\
+
+Judge every email from the point of view of the person it is addressed to (the `to` field), at the time it was sent. The question is what that person
+should do with the message, not how important the topic is to the company.\
+
+## urgent
+
+The email asks the recipient to do something, or reports a live problem the\
+recipient is responsible for, and the action is needed the same day, the next working\
+day, or by a stated deadline at most two working days away.\
+
+## normal
+
+Mail written for this recipient or a small working group, with no deadline in the\
+next two working days: status updates, questions, documents for review, scheduling,\
+and personal notes from people the recipient knows.\
+
+
+## ignore
+
+Mail the recipient can leave unread: advertising, newsletters, announcements to\
+large employee lists, and automated notifications that ask nothing of the recipient.\
+
+
+## Deciding between two labels
+
+- The wording does not decide the label. An email with "URGENT" in the
+  subject that asks nothing of the recipient is not `urgent`. A calm email
+  that says "I need your signature by 3:00 PM today" is `urgent`.\
+- A request with a deadline more than two working days away, or with no
+  deadline, is `normal`.\
+- Mass mailings and advertising are `ignore` even when they use words such
+  as "act now" or "important", because nothing is asked of this recipient in
+  particular.\
+- An automated notice that asks this specific recipient to act (for
+  example, an expense report waiting for their approval) is `normal`, or
+  `urgent` if it states a deadline within two working days.\
+- A short personal or social message from someone the recipient knows is
+  `normal`, not `ignore`.\
+
+
+
+Return string ONLY in this format: {"category": "urgent" | "normal" | "ignore", "reason": a short sentence in string format}.
+"""
 
 def run_priority(email: Email, lm: LMCallable) -> dict:
     """Problem (priority).
@@ -61,7 +112,45 @@ def run_priority(email: Email, lm: LMCallable) -> dict:
     * The function does not raise and does not modify ``email``.
     * Live: at least 85% agreement with tests/fixtures/priority_gold.json.
     """
-    raise NotImplementedError
+    #TODO: do i handle unknown?
+
+    # how do i plug in system prompt? do i just add it to the messages list?
+    # LM object takes a list of {"role", "content"} messages and returns a string
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": f"Email: {email}"}
+    ]
+
+    # llm returns strings
+    reply = lm(messages)
+
+    # parse string to python dict
+    try:
+        result = json.loads(reply)
+        category = result["category"].lower()
+        reason = result["reason"].strip() or "No reason provided."
+    except (json.JSONDecodeError, KeyError, AttributeError, TypeError):
+        # if parsing fails, return unknown category and reason
+        reply_lower = reply.lower()
+
+        if "urgent" in reply_lower:
+            category = "urgent"
+        elif "normal" in reply_lower:
+            category = "normal"
+        elif "ignore" in reply_lower:
+            category = "ignore"
+        else:
+            category = "unknown"
+
+        return {
+            "category": category,
+            "reason": reply.strip() or "Could not parse model reply.",
+        }
+
+    if category not in ["urgent", "normal", "ignore"]:
+        category = "unknown"
+
+    return {"category": category, "reason": reason}
 
 
 def run_daily_digest(emails: list[Email], lm: LMCallable) -> str:
