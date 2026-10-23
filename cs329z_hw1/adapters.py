@@ -301,7 +301,7 @@ def run_bm25_search(index: Any, query: str, k: int) -> list[tuple[int, float]]:
     if k <= 0:
         return []
 
-    query_terms = set(tokenize(query))
+    query_terms = set(tokenize(query)) # repeated query terms count once
     postings = index["postings"]
     lengths = index["lengths"]
     avgdl = index["avgdl"]
@@ -310,10 +310,10 @@ def run_bm25_search(index: Any, query: str, k: int) -> list[tuple[int, float]]:
     if not query_terms or not n_docs or not avgdl:
         return []
 
-    scores = {}
+    scores = {} # scores contains only documents sharing at least one query term
 
     for term in query_terms:
-        term_postings = postings.get(term, [])
+        term_postings = postings.get(term, []) # unknown terms add no result
         if not term_postings:
             continue
 
@@ -330,7 +330,7 @@ def run_bm25_search(index: Any, query: str, k: int) -> list[tuple[int, float]]:
             score = idf * tf * (1.5 + 1) / denominator
             scores[doc_id] = scores.get(doc_id, 0.0) + score
 
-    ranked = sorted(scores.items(), key=lambda pair: (-pair[1], pair[0]))
+    ranked = sorted(scores.items(), key=lambda pair: (-pair[1], pair[0])) # sort the highest score first, then lowest document ID for ties
     return ranked[:k]
 
 
