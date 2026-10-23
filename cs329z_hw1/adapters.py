@@ -43,6 +43,9 @@ from cs329z_hw1.types import (
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor
+from cs329z_hw1.tokenizer import tokenize
+import math
+from collections import Counter, defaultdict
 
 # ======================================================================
 # Part 1: LLM pipelines
@@ -235,7 +238,46 @@ def run_bm25_build(docs: list[str]) -> Any:
     back to ``run_bm25_search``. The index over the archive must build in
     under 15 seconds.
     """
-    raise NotImplementedError
+    # components in bm25 formula
+    # IDF: the rarer the word, the more valuable it is
+    # if we see many same word, the less reward it bring
+    # if same hit, short email is better than long email
+
+    # the structure of a index
+    # {
+    # "postings": {
+    #     "apple": [(0, 2)],   # document 0 contains “apple” twice
+    #     "banana": [(0, 1), (1, 1), (3, 1)],
+    # },
+    # "lengths": [3, 2, 4, 2, 4],
+    # "avgdl": 3.0,
+    # "n_docs": 5,
+    # }
+
+    # idea:
+    # go through all the emails (26k) and tokenize them
+    # for every word, record where this word appear from all those mail, how many times, and how long is the email
+
+    postings = defaultdict(list)
+    lengths = []
+  
+    for doc_id, doc in enumerate(docs):
+        tokens = tokenize(doc) # tokens is a list of str
+        lengths.append(len(tokens))
+
+        frequencies = Counter(tokens)
+        for term, count in frequencies.items():
+            postings[term].append((doc_id, count))
+
+    n_docs = len(docs)
+    avgdl = sum(lengths) / n_docs if n_docs else 0.0
+
+    return {
+        "postings": dict(postings),
+        "lengths": lengths,
+        "avgdl": avgdl,
+        "n_docs": n_docs,
+    }
 
 
 def run_bm25_search(index: Any, query: str, k: int) -> list[tuple[int, float]]:
@@ -256,7 +298,40 @@ def run_bm25_search(index: Any, query: str, k: int) -> list[tuple[int, float]]:
       query on average over the archive, and 2 ms for a term that occurs in
       3 of 200,000 documents.
     """
-    raise NotImplementedError
+    if k <= 0:
+        return []
+
+    query_terms = set(tokenize(query))
+    postings = index["postings"]
+    lengths = index["lengths"]
+    avgdl = index["avgdl"]
+    n_docs = index["n_docs"]
+
+    if not query_terms or not n_docs or not avgdl:
+        return []
+
+    scores = {}
+
+    for term in query_terms:
+        term_postings = postings.get(term, [])
+        if not term_postings:
+            continue
+
+        nt = len(term_postings)
+        idf = math.log((n_docs - nt + 0.5) / (nt + 0.5) + 1)
+
+        for doc_id, tf in term_postings:
+            length = lengths[doc_id]
+
+            denominator = tf + 1.5 * (
+                1 - 0.75 + 0.75 * length / avgdl
+            )
+
+            score = idf * tf * (1.5 + 1) / denominator
+            scores[doc_id] = scores.get(doc_id, 0.0) + score
+
+    ranked = sorted(scores.items(), key=lambda pair: (-pair[1], pair[0]))
+    return ranked[:k]
 
 
 def run_email_qa(
