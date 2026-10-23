@@ -42,13 +42,14 @@ from cs329z_hw1.types import (
 
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 
 # ======================================================================
 # Part 1: LLM pipelines
 # ======================================================================
 
 
-SYSTEM_PROMPT = """
+run_priority_PROMPT = """
 You are a professional assistant that classifies emails for their recipient.\
 
 Please decide the priority of the email based on the criteria below:\
@@ -96,6 +97,14 @@ large employee lists, and automated notifications that ask nothing of the recipi
 Return string ONLY in this format: {"category": "urgent" | "normal" | "ignore", "reason": a short sentence in string format}.
 """
 
+run_daily_digest_PROMPT = """
+Write a morning digest for a busy employee using only the supplied emails.
+
+State every urgent item first. For each urgent item, include the exact company,
+project, or site name from that email. Do not mention ignored or promotional
+emails. Keep the digest concise and under 300 words.
+"""
+
 def run_priority(email: Email, lm: LMCallable) -> dict:
     """Problem (priority).
 
@@ -117,7 +126,7 @@ def run_priority(email: Email, lm: LMCallable) -> dict:
     # how do i plug in system prompt? do i just add it to the messages list?
     # LM object takes a list of {"role", "content"} messages and returns a string
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": run_priority_PROMPT},
         {"role": "user", "content": f"Email: {email}"}
     ]
 
@@ -168,7 +177,52 @@ def run_daily_digest(emails: list[Email], lm: LMCallable) -> str:
       site that email is about; it contains no term listed for the gold
       ignore emails.
     """
-    raise NotImplementedError
+    # classify email (concurrently), treat unknown like normal
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        priorities = list(pool.map(lambda email: run_priority(email, lm), emails))
+
+        # priorities = list{"category": category, "reason": reason}
+
+    # Keep non-ignore emails, treating unknown as normal.
+    items = []
+    for email, priority in zip(emails, priorities):
+        category = priority["category"]
+
+        # drop the ignore pile
+        if category == "ignore":
+            continue
+
+        items.append({
+            "email": email,
+            "category": category,
+        })
+
+    # # order by urgency
+    items.sort(key=lambda item: item["category"] != "urgent")
+
+    # Convert list into a huge string separated by /n/n
+    email_text = "\n\n".join(
+        f"""Priority: {item["category"]}
+From: {item["email"]["from"]}
+Subject: {item["email"]["subject"]}
+Body: {item["email"]["body"]}"""
+        for item in items
+    )
+
+    # Feed in all the context for LLM
+    # final llm call writes text
+    messages = [
+        {
+            "role": "system",
+            "content": run_daily_digest_PROMPT,
+        },
+        {
+            "role": "user",
+            "content": f"Emails to summarize:\n\n{email_text}",
+        },
+    ]
+
+    return lm(messages)    
 
 
 def run_bm25_build(docs: list[str]) -> Any:
