@@ -424,6 +424,17 @@ def run_email_qa(
     # safeguard if exceed the number of hops
     return no_answer
 
+    # results against the test suite
+    # email_qa 1-hop: 12 of 12
+    # email_qa 2-hop: 11 of 13
+    # email_qa accuracy: 23 of 25
+    # wrong answers:
+    #   q15 (2-hop) 'Which bank is providing the collateral for the counterparty flagged in the Whinstone review?'
+    #     expected one of ['Bank of Halverstad', 'Halverstad'], got None
+    #   q17 (2-hop) 'Where does the customer in the Copperline deal want the gas delivered?'
+    #     expected one of ['Pelham Junction'], got None
+    # .email_qa support: 23 of 23 correct answers cite a gold email
+
 
 def _format_email(email: Email) -> str:
   """Helper function for run_email_qa 
