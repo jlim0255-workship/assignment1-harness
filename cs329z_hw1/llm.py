@@ -84,6 +84,7 @@ PRICES = {
     "gpt-5.5": (5.00, 0.50, 30.00),
     "gpt-6-luna": (0.10, 0.01, 0.50),
     "gpt-6-sol": (2.00, 0.20, 10.00),
+    "nemotron-3-ultra-550b-a55b:free": (0.0, 0.0, 0.0),  # OpenRouter free tier
 }
 
 VALID_ROLES = ("system", "user", "assistant")
